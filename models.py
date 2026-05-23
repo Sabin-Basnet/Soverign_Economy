@@ -37,11 +37,20 @@ class TransferResponse(BaseModel):
 
 # ============= Spatial Models =============
 class PlayerPosition(BaseModel):
-    """Player spatial coordinates"""
+    """Player spatial coordinates (legacy grid-based)"""
     user_id: str
     location_x: float
     location_y: float
     bearing: float = 0.0
+
+
+class PlayerGPSPosition(BaseModel):
+    """Player real-world GPS coordinates"""
+    user_id: str
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+    accuracy_meters: Optional[float] = None
+    source: Literal["gps", "manual", "joystick"] = "gps"
 
 
 class PlayerMoveEvent(BaseModel):
@@ -50,12 +59,90 @@ class PlayerMoveEvent(BaseModel):
     payload: PlayerPosition
 
 
+class PlayerGPSMoveEvent(BaseModel):
+    """WebSocket: player_gps_move event payload (real-world)"""
+    event: Literal["player_gps_move"]
+    payload: PlayerGPSPosition
+
+
 class SectorBroadcast(BaseModel):
     """Broadcast to nearby players (sector-partitioned)"""
     event: str
     data: dict
     sender_id: str
     distance: float
+
+
+# ============= Real-World Location Models =============
+class LocationCreate(BaseModel):
+    """POST /api/v1/locations/create - Register a new shop"""
+    owner_id: str
+    location_name: str
+    description: Optional[str] = None
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+    location_type: Literal["shop", "bank", "trading_post", "guild_hall"] = "shop"
+
+
+class LocationResponse(BaseModel):
+    """Shop/Location response"""
+    location_id: str
+    owner_id: str
+    location_name: str
+    description: Optional[str]
+    latitude: float
+    longitude: float
+    location_type: str
+    balance: float
+    created_at: datetime
+
+
+class LocationNearbyRequest(BaseModel):
+    """GET /api/v1/locations/nearby - Find nearby shops"""
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+    radius_meters: float = Field(default=1000.0, gt=0)
+
+
+class LocationNearbyResponse(BaseModel):
+    """Nearby locations response"""
+    location_id: str
+    location_name: str
+    location_type: str
+    latitude: float
+    longitude: float
+    distance_meters: float
+    balance: float
+
+
+class POIResponse(BaseModel):
+    """Point of Interest response"""
+    poi_id: str
+    poi_name: str
+    description: Optional[str]
+    latitude: float
+    longitude: float
+    poi_type: str
+    reward_type: Optional[str]
+    reward_amount: Optional[float]
+    interaction_radius_meters: float
+
+
+class MapStateResponse(BaseModel):
+    """Complete map state for rendering"""
+    player_position: PlayerGPSPosition
+    nearby_locations: list[LocationNearbyResponse]
+    nearby_pois: list[POIResponse]
+    nearby_players: list[PlayerGPSPosition]  # Opt-in location sharing
+
+
+class ProximityEventCreate(BaseModel):
+    """Log a proximity event (arrival at location/POI)"""
+    user_id: str
+    location_id: Optional[str] = None
+    poi_id: Optional[str] = None
+    event_type: Literal["arrived", "departed", "interacted", "completed_quest"]
+    distance_meters: Optional[float] = None
 
 
 # ============= Escrow Models =============
