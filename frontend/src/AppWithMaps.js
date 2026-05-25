@@ -21,6 +21,9 @@ const AppWithMaps = () => {
   const [selectedShop, setSelectedShop] = useState(null);
   const [showTransferUI, setShowTransferUI] = useState(false);
   const [transferAmount, setTransferAmount] = useState(0);
+  const [joystickActive, setJoystickActive] = useState(false);
+  const [joystickPos, setJoystickPos] = useState({ x: 0, y: 0 });
+  const joystickRef = useRef(null);
 
   // ============= Location Update Handler =============
   const handleLocationUpdate = useCallback(
@@ -67,6 +70,48 @@ const AppWithMaps = () => {
     const interval = setInterval(fetchBalance, 5000); // Refresh every 5s
     return () => clearInterval(interval);
   }, [userId]);
+
+  // ============= Joystick Handler =============
+  const handleJoystickStart = useCallback((e) => {
+    setJoystickActive(true);
+  }, []);
+
+  const handleJoystickMove = useCallback((e) => {
+    if (!joystickActive || !joystickRef.current) return;
+
+    const rect = joystickRef.current.getBoundingClientRect();
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left - centerX;
+    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top - centerY;
+
+    const distance = Math.sqrt(x * x + y * y);
+    const maxDistance = 40;
+    const limitedX = distance > maxDistance ? (x / distance) * maxDistance : x;
+    const limitedY = distance > maxDistance ? (y / distance) * maxDistance : y;
+
+    setJoystickPos({ x: limitedX, y: limitedY });
+  }, [joystickActive]);
+
+  const handleJoystickEnd = useCallback(() => {
+    setJoystickActive(false);
+    setJoystickPos({ x: 0, y: 0 });
+  }, []);
+
+  React.useEffect(() => {
+    if (joystickActive) {
+      window.addEventListener('mousemove', handleJoystickMove);
+      window.addEventListener('touchmove', handleJoystickMove);
+      window.addEventListener('mouseup', handleJoystickEnd);
+      window.addEventListener('touchend', handleJoystickEnd);
+      return () => {
+        window.removeEventListener('mousemove', handleJoystickMove);
+        window.removeEventListener('touchmove', handleJoystickMove);
+        window.removeEventListener('mouseup', handleJoystickEnd);
+        window.removeEventListener('touchend', handleJoystickEnd);
+      };
+    }
+  }, [joystickActive, handleJoystickMove, handleJoystickEnd]);
 
   // ============= Transaction Handler =============
   const handleTransfer = async (receiverId, amount) => {
@@ -121,30 +166,131 @@ const AppWithMaps = () => {
 
   return (
     <div className="app-container">
-      {/* Full-screen Map */}
-      <MapComponent
-        userId={userId}
-        onLocationUpdate={handleLocationUpdate}
-        isConnected={true}
-      />
-
-      {/* Top UI Bar */}
+      {/* Top Control Bar */}
       <div className="app-header">
-        <div className="player-info">
-          <h2>🎮 {userId}</h2>
+        <div className="player-selector-panel">
+          <label>🎮 Player:</label>
+          <select 
+            value={userId} 
+            onChange={(e) => setUserId(e.target.value)}
+            className="player-select"
+          >
+            <option>PLAYER_001</option>
+            <option>PLAYER_002</option>
+            <option>PLAYER_003</option>
+            <option>MERCHANT_001</option>
+          </select>
+        </div>
+
+        <div className="balance-panel">
           <div className="balance-display">
-            <span className="balance-label">Wallet:</span>
-            <span className="balance-amount">{balance.toFixed(2)}</span>
+            <span className="balance-label">💰 Wallet:</span>
+            <span className="balance-amount">{(balance || 0).toFixed(2)}</span>
             <span className="token-symbol">⚡</span>
           </div>
         </div>
 
         {currentLocation && (
-          <div className="location-info">
-            <span>📍 {currentLocation.latitude.toFixed(4)}, {currentLocation.longitude.toFixed(4)}</span>
+          <div className="location-panel">
+            <span>📍 {(currentLocation.latitude || 0).toFixed(4)}</span>
+            <span>|</span>
+            <span>{(currentLocation.longitude || 0).toFixed(4)}</span>
             <span className="location-source">({currentLocation.source})</span>
           </div>
         )}
+      </div>
+
+      {/* Main Content Area */}
+      <div className="map-main-content">
+        {/* Left Sidebar - Joystick */}
+        <div className="left-sidebar">
+          <div className="control-panel">
+            <h3>🕹️ Movement</h3>
+            <div 
+              ref={joystickRef}
+              className={`joystick-container ${joystickActive ? 'active' : ''}`}
+              onMouseDown={handleJoystickStart}
+              onTouchStart={handleJoystickStart}
+            >
+              <div className="joystick-outer">
+                <div 
+                  className="joystick-inner"
+                  style={{
+                    transform: `translate(${joystickPos.x}px, ${joystickPos.y}px)`
+                  }}
+                />
+              </div>
+              <p className="joystick-label">
+                {joystickActive ? '↔️ Moving...' : 'Drag to move'}
+              </p>
+            </div>
+          </div>
+
+          {currentLocation && (
+            <div className="info-panel">
+              <h3>📍 Location</h3>
+              <div className="info-item">
+                <span className="label">Latitude:</span>
+                <span className="value">{(currentLocation.latitude || 0).toFixed(6)}</span>
+              </div>
+              <div className="info-item">
+                <span className="label">Longitude:</span>
+                <span className="value">{(currentLocation.longitude || 0).toFixed(6)}</span>
+              </div>
+              <div className="info-item">
+                <span className="label">Source:</span>
+                <span className={`value source-${currentLocation.source}`}>
+                  {currentLocation.source}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Center - Map */}
+        <div className="map-center">
+          <MapComponent
+            userId={userId}
+            onLocationUpdate={handleLocationUpdate}
+            isConnected={true}
+          />
+        </div>
+
+        {/* Right Sidebar - Info Panel */}
+        <div className="right-sidebar">
+          <div className="quick-actions">
+            <h3>⚡ Quick Actions</h3>
+            <button className="action-btn transfer-btn">
+              💳 Send Transfer
+            </button>
+            <button className="action-btn shop-btn">
+              🏪 Find Shops
+            </button>
+            <button className="action-btn poi-btn">
+              🎯 Nearby POIs
+            </button>
+          </div>
+
+          {selectedShop ? (
+            <div className="selected-shop-panel">
+              <h3>{selectedShop.location_name}</h3>
+              <div className="shop-details">
+                <p><strong>Type:</strong> {selectedShop.location_type}</p>
+                <p><strong>Distance:</strong> {Math.round(selectedShop.distance_meters)}m</p>
+              </div>
+              <button 
+                className="btn-interact"
+                onClick={() => handleShopInteraction(selectedShop)}
+              >
+                Interact
+              </button>
+            </div>
+          ) : (
+            <div className="no-selection">
+              <p>Click a shop marker to interact</p>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Shop Interaction Modal */}
@@ -171,15 +317,15 @@ const AppWithMaps = () => {
                 value={transferAmount}
                 onChange={(e) => setTransferAmount(parseFloat(e.target.value))}
                 min="0"
-                max={balance}
+                max={balance || 0}
                 step="10"
               />
 
               <div className="transfer-summary">
-                <p>Amount: {transferAmount.toFixed(2)} ⚡</p>
-                <p>Tax (2%): {(transferAmount * 0.02).toFixed(2)} ⚡</p>
+                <p>Amount: {(transferAmount || 0).toFixed(2)} ⚡</p>
+                <p>Tax (2%): {((transferAmount || 0) * 0.02).toFixed(2)} ⚡</p>
                 <p className="total">
-                  Total: {(transferAmount * 1.02).toFixed(2)} ⚡
+                  Total: {((transferAmount || 0) * 1.02).toFixed(2)} ⚡
                 </p>
               </div>
 
@@ -188,7 +334,7 @@ const AppWithMaps = () => {
                 onClick={() =>
                   handleTransfer(selectedShop.owner_id, transferAmount)
                 }
-                disabled={transferAmount <= 0 || transferAmount * 1.02 > balance}
+                disabled={transferAmount <= 0 || transferAmount * 1.02 > (balance || 0)}
               >
                 Complete Purchase
               </button>
@@ -211,10 +357,10 @@ const AppWithMaps = () => {
           <p>User: {userId}</p>
           <p>
             Location: {currentLocation
-              ? `${currentLocation.latitude.toFixed(4)}, ${currentLocation.longitude.toFixed(4)}`
+              ? `${(currentLocation.latitude || 0).toFixed(4)}, ${(currentLocation.longitude || 0).toFixed(4)}`
               : 'Not set'}
           </p>
-          <p>Balance: {balance.toFixed(2)}</p>
+          <p>Balance: {(balance || 0).toFixed(2)}</p>
         </div>
       )}
     </div>

@@ -51,16 +51,16 @@ CREATE TABLE IF NOT EXISTS escrow (
 );
 
 -- Real-Time Player Spatial Coordinates
-CREATE TABLE IF NOT EXISTS player_positions (
-    position_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id TEXT NOT NULL,
-    location_x REAL NOT NULL,
-    location_y REAL NOT NULL,
-    bearing REAL DEFAULT 0.0,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY(user_id) REFERENCES users(user_id),
-    UNIQUE(user_id)
-);
+-- CREATE TABLE IF NOT EXISTS player_positions (
+--     position_id INTEGER PRIMARY KEY AUTOINCREMENT,
+--     user_id TEXT NOT NULL,
+--     location_x REAL NOT NULL,
+--     location_y REAL NOT NULL,
+--     bearing REAL DEFAULT 0.0,
+--     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+--     FOREIGN KEY(user_id) REFERENCES users(user_id),
+--     UNIQUE(user_id)
+-- );
 
 -- Treasury Audit Log (Fiscal Policy Execution)
 CREATE TABLE IF NOT EXISTS audit_log (
@@ -83,4 +83,48 @@ CREATE TABLE IF NOT EXISTS analytics_snapshot (
     num_active_players INTEGER,
     num_transactions INTEGER,
     captured_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- by myself
+CREATE TABLE IF NOT EXISTS locations (
+    location_id TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL,
+    location_name TEXT NOT NULL,
+    description TEXT,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    location_type TEXT DEFAULT 'shop',  -- 'shop', 'bank', 'trading_post', 'guild_hall'
+    balance REAL NOT NULL CHECK(balance >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS pois (
+    poi_id TEXT PRIMARY KEY,
+    poi_name TEXT NOT NULL,
+    description TEXT,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    poi_type TEXT DEFAULT 'landmark',  -- 'landmark', 'quest_hub', 'resource_spot', 'arena', 'dungeon'
+    reward_type TEXT,  -- 'token_bonus', 'item', 'quest', 'experience'
+    reward_amount REAL,  -- For token bonuses
+    interaction_radius_meters REAL DEFAULT 100.0,  -- How close player must be to interact
+    interaction_cooldown_minutes INTEGER DEFAULT 60,  -- How often can player interact
+    is_active BOOLEAN DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS user_location_history (
+    history_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    accuracy_meters REAL,  -- GPS accuracy from device
+    source TEXT DEFAULT 'gps',  -- 'gps', 'manual', 'joystick'
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS player_positions (
+    user_id TEXT PRIMARY KEY,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(user_id)
 );

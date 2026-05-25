@@ -282,11 +282,11 @@ const App = () => {
           <span>
             {isConnected ? "✅ Connected" : "❌ Disconnected"}
           </span>
-          <span>Balance: {balance.toFixed(2)} tokens</span>
-          {metrics && (
+          <span>Balance: {(balance || 0).toFixed(2)} tokens</span>
+          {metrics && metrics.velocity_of_money && (
             <span>
-              Velocity: {metrics.velocity_of_money.toFixed(3)} | 
-              Gini: {metrics.gini_coefficient.toFixed(3)}
+              Velocity: {(metrics.velocity_of_money || 0).toFixed(3)} | 
+              Gini: {(metrics.gini_coefficient || 0).toFixed(3)}
             </span>
           )}
         </div>
@@ -359,11 +359,11 @@ const App = () => {
             </div>
             {metrics && (
               <div className="status-box">
-                <strong>Treasury:</strong> {metrics.treasury_balance.toFixed(0)}
+                <strong>Treasury:</strong> {(metrics.treasury_balance || 0).toFixed(0)}
                 <br />
-                <strong>Circulation:</strong> {metrics.total_circulation.toFixed(0)}
+                <strong>Circulation:</strong> {(metrics.total_circulation || 0).toFixed(0)}
                 <br />
-                <strong>Active Players:</strong> {metrics.num_active_players}
+                <strong>Active Players:</strong> {metrics.num_active_players || 0}
               </div>
             )}
           </div>

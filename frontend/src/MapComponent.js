@@ -2,8 +2,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import './MapComponent.css';
 
 /**
- * Real-World GPS Map Component
- * Integrates Google Maps API with location-based gameplay
+ * Real-World GPS Map Component using Leaflet.js
+ * 100% free - uses OpenStreetMap (no API key required)
  * 
  * Features:
  * - Real GPS tracking with fallback to manual placement
@@ -12,7 +12,7 @@ import './MapComponent.css';
  * - Proximity detection and interaction UI
  */
 
-const KATHMANDU_CENTER = { lat: 27.7128, lng: 85.3272 };
+const DHARAN_CENTER = { lat: 26.8124, lng: 87.2845 };
 const DEFAULT_RADIUS = 5000; // meters
 const API_BASE = "http://localhost:8000";
 
@@ -22,7 +22,7 @@ const MapComponent = ({
   isConnected 
 }) => {
   const mapRef = useRef(null);
-  const mapInstanceRef = useRef(null);
+  const leafletMapRef = useRef(null);
   
   // Location state
   const [playerLocation, setPlayerLocation] = useState(null);
@@ -35,7 +35,6 @@ const MapComponent = ({
   // UI state
   const [showGeolocationPrompt, setShowGeolocationPrompt] = useState(true);
   const [joystickActive, setJoystickActive] = useState(false);
-  const [interactionDistance, setInteractionDistance] = useState(null);
   
   // Markers
   const playerMarkerRef = useRef(null);
@@ -47,44 +46,36 @@ const MapComponent = ({
 
   // ============= Map Initialization =============
   useEffect(() => {
-    if (!window.google) {
-      console.error("Google Maps not loaded. Add script to index.html");
-      return;
-    }
+    if (leafletMapRef.current) return; // Already initialized
 
-    if (mapInstanceRef.current) return; // Already initialized
+    // Create map using Leaflet
+    const map = window.L.map(mapRef.current).setView([DHARAN_CENTER.lat, DHARAN_CENTER.lng], 15);
 
-    const map = new window.google.maps.Map(mapRef.current, {
-      zoom: 15,
-      center: KATHMANDU_CENTER,
-      mapTypeControl: true,
-      fullscreenControl: true,
-      streetViewControl: false,
-      styles: [
-        {
-          featureType: "poi",
-          stylers: [{ visibility: "off" }]
-        }
-      ]
-    });
+    // Add OpenStreetMap tile layer (100% free, no API key needed!)
+    window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(map);
 
-    mapInstanceRef.current = map;
+    leafletMapRef.current = map;
 
     // Add initial player marker
-    const playerMarker = new window.google.maps.Marker({
-      map: map,
-      title: userId,
-      icon: {
-        path: window.google.maps.SymbolPath.CIRCLE,
-        scale: 10,
-        fillColor: "#4285F4",
-        fillOpacity: 0.9,
-        strokeColor: "#fff",
-        strokeWeight: 2
-      }
-    });
+    const playerMarker = window.L.circleMarker([DHARAN_CENTER.lat, DHARAN_CENTER.lng], {
+      radius: 10,
+      fillColor: '#4285F4',
+      color: '#fff',
+      weight: 2,
+      opacity: 1,
+      fillOpacity: 0.9
+    }).addTo(map);
 
+    playerMarker.bindPopup(`<b>${userId}</b><br/>Your Position`);
     playerMarkerRef.current = playerMarker;
+
+    // Allow map clicks for manual placement
+    map.on('click', (e) => {
+      updatePlayerLocation(e.latlng.lat, e.latlng.lng, null, 'manual');
+    });
   }, [userId]);
 
   // ============= Geolocation Handler =============
@@ -130,15 +121,6 @@ const MapComponent = ({
     );
   }, []);
 
-  // ============= Manual Location Placement =============
-  const handleMapClick = useCallback((e) => {
-    if (!mapInstanceRef.current) return;
-    
-    const lat = e.latLng.lat();
-    const lng = e.latLng.lng();
-    updatePlayerLocation(lat, lng, null, 'manual');
-  }, []);
-
   // ============= Update Player Location =============
   const updatePlayerLocation = useCallback(
     async (latitude, longitude, accuracyMeters = null, source = 'manual') => {
@@ -146,15 +128,9 @@ const MapComponent = ({
       setAccuracy(accuracyMeters);
 
       // Update map
-      if (playerMarkerRef.current && mapInstanceRef.current) {
-        playerMarkerRef.current.setPosition({
-          lat: latitude,
-          lng: longitude
-        });
-        mapInstanceRef.current.panTo({
-          lat: latitude,
-          lng: longitude
-        });
+      if (playerMarkerRef.current && leafletMapRef.current) {
+        playerMarkerRef.current.setLatLng([latitude, longitude]);
+        leafletMapRef.current.panTo([latitude, longitude]);
       }
 
       // Send to server
@@ -215,49 +191,38 @@ const MapComponent = ({
 
   // ============= Add Location Marker =============
   const addLocationMarker = useCallback((location) => {
-    if (!mapInstanceRef.current) return;
+    if (!leafletMapRef.current) return;
 
     const markerId = location.location_id;
 
     // Remove old marker if exists
     if (locationMarkersRef.current[markerId]) {
-      locationMarkersRef.current[markerId].setMap(null);
+      leafletMapRef.current.removeLayer(locationMarkersRef.current[markerId]);
     }
 
-    // Create new marker
-    const marker = new window.google.maps.Marker({
-      map: mapInstanceRef.current,
-      position: {
-        lat: location.latitude,
-        lng: location.longitude
-      },
-      title: location.location_name,
-      icon: {
-        path: window.google.maps.SymbolPath.ROUNDED_SQUARE,
-        scale: 8,
-        fillColor: location.location_type === 'trading_post' ? '#FF6B6B' : '#51CF66',
-        fillOpacity: 0.8,
-        strokeColor: '#fff',
-        strokeWeight: 1
-      }
-    });
+    // Create new marker with appropriate icon color
+    const markerColor = location.location_type === 'trading_post' ? '#FF6B6B' : '#51CF66';
 
-    marker.addListener('click', () => {
+    const marker = window.L.circleMarker([location.latitude, location.longitude], {
+      radius: 8,
+      fillColor: markerColor,
+      color: '#fff',
+      weight: 1,
+      opacity: 1,
+      fillOpacity: 0.8
+    }).addTo(leafletMapRef.current);
+
+    const popupContent = `
+      <div style="padding: 5px;">
+        <h4>${location.location_name}</h4>
+        <p>${location.location_type}</p>
+        <p>Distance: ${Math.round(location.distance_meters)}m</p>
+      </div>
+    `;
+
+    marker.bindPopup(popupContent);
+    marker.on('click', () => {
       setSelectedLocation(location);
-      // Show info window
-      if (!marker.infoWindow) {
-        marker.infoWindow = new window.google.maps.InfoWindow({
-          content: `
-            <div style="padding: 10px;">
-              <h3>${location.location_name}</h3>
-              <p>${location.location_type}</p>
-              <p>Distance: ${Math.round(location.distance_meters)}m</p>
-              <button onclick="console.log('Interact with location')">Shop</button>
-            </div>
-          `
-        });
-      }
-      marker.infoWindow.open(mapInstanceRef.current, marker);
     });
 
     locationMarkersRef.current[markerId] = marker;
@@ -265,74 +230,73 @@ const MapComponent = ({
 
   // ============= Add POI Marker =============
   const addPOIMarker = useCallback((poi) => {
-    if (!mapInstanceRef.current) return;
+    if (!leafletMapRef.current) return;
 
     const markerId = poi.poi_id;
 
     // Remove old marker if exists
     if (poiMarkersRef.current[markerId]) {
-      poiMarkersRef.current[markerId].setMap(null);
+      leafletMapRef.current.removeLayer(poiMarkersRef.current[markerId]);
     }
 
-    // Create new marker
-    const poiIconMap = {
-      landmark: { color: '#FFD700' },
-      quest_hub: { color: '#FF69B4' },
-      arena: { color: '#FF4500' },
-      resource_spot: { color: '#32CD32' }
+    // Create new marker with appropriate icon color
+    const poiColorMap = {
+      landmark: '#FFD700',
+      quest_hub: '#FF69B4',
+      arena: '#FF4500',
+      resource_spot: '#32CD32'
     };
 
-    const iconColor = poiIconMap[poi.poi_type]?.color || '#808080';
+    const markerColor = poiColorMap[poi.poi_type] || '#808080';
 
-    const marker = new window.google.maps.Marker({
-      map: mapInstanceRef.current,
-      position: {
-        lat: poi.latitude,
-        lng: poi.longitude
-      },
-      title: poi.poi_name,
-      icon: {
-        path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
-        scale: 8,
-        fillColor: iconColor,
-        fillOpacity: 0.8,
-        strokeColor: '#fff',
-        strokeWeight: 1
-      }
-    });
+    const marker = window.L.circleMarker([poi.latitude, poi.longitude], {
+      radius: 7,
+      fillColor: markerColor,
+      color: '#fff',
+      weight: 1,
+      opacity: 1,
+      fillOpacity: 0.8
+    }).addTo(leafletMapRef.current);
 
-    marker.addListener('click', () => {
-      if (!marker.infoWindow) {
-        marker.infoWindow = new window.google.maps.InfoWindow({
-          content: `
-            <div style="padding: 10px;">
-              <h3>${poi.poi_name}</h3>
-              <p>${poi.poi_type}</p>
-              <p>Reward: ${poi.reward_amount} ${poi.reward_type}</p>
-            </div>
-          `
-        });
-      }
-      marker.infoWindow.open(mapInstanceRef.current, marker);
-    });
+    const popupContent = `
+      <div style="padding: 5px;">
+        <h4>${poi.poi_name}</h4>
+        <p>${poi.poi_type}</p>
+        <p>Reward: ${poi.reward_amount} ${poi.reward_type}</p>
+      </div>
+    `;
+
+    marker.bindPopup(popupContent);
 
     poiMarkersRef.current[markerId] = marker;
   }, []);
 
+  // Joystick ref
+  const joystickRef = useRef(null);
+  const joystickStartPos = useRef(null);
+
   // ============= Joystick Movement =============
   const handleJoystickStart = useCallback((e) => {
     setJoystickActive(true);
+    const rect = joystickRef.current.getBoundingClientRect();
+    joystickStartPos.current = {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2
+    };
   }, []);
 
   const handleJoystickMove = useCallback(
     (e) => {
-      if (!joystickActive || !playerLocation) return;
+      if (!joystickActive || !playerLocation || !joystickStartPos.current) return;
 
-      const deltaLat = e.deltaY * 0.0001; // ~10m per 100px
-      const deltaLng = e.deltaX * 0.0001;
+      const clientX = e.clientX || (e.touches && e.touches[0]?.clientX) || 0;
+      const clientY = e.clientY || (e.touches && e.touches[0]?.clientY) || 0;
+      
+      const deltaX = (clientX - joystickStartPos.current.x) / 500;
+      const deltaY = (clientY - joystickStartPos.current.y) / 500;
 
-      const newLat = playerLocation.lat + deltaLat;
-      const newLng = playerLocation.lng + deltaLng;
+      const newLat = playerLocation.lat - deltaY * 0.01;
+      const newLng = playerLocation.lng + deltaX * 0.01;
 
       updatePlayerLocation(newLat, newLng, null, 'joystick');
     },
@@ -341,7 +305,25 @@ const MapComponent = ({
 
   const handleJoystickEnd = useCallback(() => {
     setJoystickActive(false);
+    joystickStartPos.current = null;
   }, []);
+
+  // Attach global mousemove listener when joystick is active
+  useEffect(() => {
+    if (!joystickActive) return;
+
+    window.addEventListener('mousemove', handleJoystickMove);
+    window.addEventListener('mouseup', handleJoystickEnd);
+    window.addEventListener('touchmove', handleJoystickMove);
+    window.addEventListener('touchend', handleJoystickEnd);
+
+    return () => {
+      window.removeEventListener('mousemove', handleJoystickMove);
+      window.removeEventListener('mouseup', handleJoystickEnd);
+      window.removeEventListener('touchmove', handleJoystickMove);
+      window.removeEventListener('touchend', handleJoystickEnd);
+    };
+  }, [joystickActive, handleJoystickMove, handleJoystickEnd]);
 
   // Cleanup geolocation on unmount
   useEffect(() => {
@@ -368,19 +350,7 @@ const MapComponent = ({
       )}
 
       {/* Map Container */}
-      <div 
-        ref={mapRef} 
-        className="map-container"
-        onClick={(e) => {
-          if (e.target === mapRef.current) {
-            const bounds = mapRef.current.getBoundingClientRect();
-            const centerPoint = mapInstanceRef.current?.getCenter();
-            if (centerPoint) {
-              handleMapClick({ latLng: centerPoint });
-            }
-          }
-        }}
-      />
+      <div ref={mapRef} className="map-container" />
 
       {/* Player Info Panel */}
       <div className="player-info-panel">
@@ -410,11 +380,10 @@ const MapComponent = ({
 
       {/* Joystick/Drag Zone */}
       <div
+        ref={joystickRef}
         className={`joystick-zone ${joystickActive ? 'active' : ''}`}
         onMouseDown={handleJoystickStart}
-        onMouseMove={handleJoystickMove}
-        onMouseUp={handleJoystickEnd}
-        onMouseLeave={handleJoystickEnd}
+        onTouchStart={handleJoystickStart}
         title="Click and drag to move (or use GPS)"
       >
         {joystickActive && <div className="joystick-indicator">↔️ Moving...</div>}
